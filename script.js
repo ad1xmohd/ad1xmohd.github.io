@@ -9,10 +9,11 @@ const PROJECTS = [
     repo: "EtherWare",
     name: "EtherWare",
     tier: "mid",
-    badge: { text: "Under Development", cls: "dev" },
+    badge: { text: "Early access on EtherWare", cls: "dev" },
     summary: "Desinged to use external WiFi Adapter in Android Devices and its safe and no-root and no developer mode required.",
     fallbackTech: ["Systems", "Networking"],
-    icon: { type: "img", src: "assets/etherware.svg" }
+    icon: { type: "img", src: "assets/etherware.svg" },
+    download: { label: "Download EtherWare 2.0", url: "https://www.linkedin.com/in/ad1xmohd/" }
   },
   {
     repo: "XcelSync",
@@ -34,8 +35,29 @@ const PROJECTS = [
   }
 ];
 
+// ===== Helpers =====
+
+/**
+ * Fetch JSON with an optional AbortSignal.
+ * Throws on non-2xx or network error.
+ */
+async function fetchJSON(url, signal) {
+  const r = await fetch(url, signal ? { signal } : undefined);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+/**
+ * Check whether the marked library has been loaded.
+ * Returns false gracefully instead of throwing.
+ */
+function markedAvailable() {
+  return typeof window.marked !== "undefined" && typeof window.marked.parse === "function";
+}
+
 // ===== Footer year =====
-document.getElementById("year").textContent = new Date().getFullYear();
+const yearEl = document.getElementById("year");
+if (yearEl) yearEl.textContent = new Date().getFullYear();
 
 // ===== Reveal observer =====
 const io = new IntersectionObserver((entries) => {
@@ -49,14 +71,21 @@ const io = new IntersectionObserver((entries) => {
 
 document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
 
-// ===== Parallax orbs (subtle mouse follow) =====
+// ===== Parallax orbs (throttled mouse follow) =====
 const orbs = document.querySelectorAll(".orb");
+let _rafId = null;
+let _pendingX = 0, _pendingY = 0;
+
 window.addEventListener("mousemove", (e) => {
-  const x = (e.clientX / window.innerWidth - 0.5) * 2;
-  const y = (e.clientY / window.innerHeight - 0.5) * 2;
-  orbs.forEach((o, i) => {
-    const f = (i + 1) * 14;
-    o.style.transform = `translate3d(${x * f}px, ${y * f}px, 0)`;
+  _pendingX = (e.clientX / window.innerWidth - 0.5) * 2;
+  _pendingY = (e.clientY / window.innerHeight - 0.5) * 2;
+  if (_rafId) return; // already queued
+  _rafId = requestAnimationFrame(() => {
+    _rafId = null;
+    orbs.forEach((o, i) => {
+      const f = (i + 1) * 14;
+      o.style.transform = `translate3d(${_pendingX * f}px, ${_pendingY * f}px, 0)`;
+    });
   });
 }, { passive: true });
 
@@ -96,17 +125,23 @@ PROJECTS.forEach((p, i) => {
     </div>
     <div class="card-actions">
       <button class="btn btn-primary open-btn">Open Case File</button>
+      ${p.download ? `<a class="btn btn-primary" href="${p.download.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${p.download.label}</a>` : ""}
       <a class="btn btn-ghost" href="https://github.com/${USER}/${p.repo}" target="_blank" rel="noopener" onclick="event.stopPropagation()">GitHub ↗</a>
       <a class="btn btn-ghost demo-btn" data-demo style="display:none" target="_blank" rel="noopener" onclick="event.stopPropagation()">Live ↗</a>
     </div>
   `;
 
-  // hover glow tracking
+  // hover glow tracking — throttled via RAF
+  let _glowRaf = null;
   card.addEventListener("mousemove", (e) => {
-    const r = card.getBoundingClientRect();
-    card.style.setProperty("--mx", `${e.clientX - r.left}px`);
-    card.style.setProperty("--my", `${e.clientY - r.top}px`);
-  });
+    if (_glowRaf) return;
+    _glowRaf = requestAnimationFrame(() => {
+      _glowRaf = null;
+      const r = card.getBoundingClientRect();
+      card.style.setProperty("--mx", `${e.clientX - r.left}px`);
+      card.style.setProperty("--my", `${e.clientY - r.top}px`);
+    });
+  }, { passive: true });
 
   card.addEventListener("click", () => openModal(p));
   io.observe(card);
@@ -114,130 +149,197 @@ PROJECTS.forEach((p, i) => {
 });
 
 // ===== GitHub data hydration =====
-async function fetchJSON(url) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(r.status);
-  return r.json();
-}
-
 async function hydrateRepo(p) {
   const card = cardsRoot.querySelector(`[data-repo="${p.repo}"]`);
   if (!card) return;
+
   try {
     const repo = await fetchJSON(`https://api.github.com/repos/${USER}/${p.repo}`);
     p._repo = repo;
+
     const lang = card.querySelector("[data-lang]");
-    if (repo.language) lang.textContent = repo.language;
-    else lang.style.display = "none";
+    if (lang) {
+      if (repo.language) lang.textContent = repo.language;
+      else lang.style.display = "none";
+    }
 
     if (repo.homepage && repo.homepage.trim()) {
       const demo = card.querySelector("[data-demo]");
-      demo.href = repo.homepage;
-      demo.textContent = "Live ↗";
-      demo.style.display = "";
+      if (demo) {
+        demo.href = repo.homepage;
+        demo.textContent = "Live ↗";
+        demo.style.display = "";
+      }
     }
 
-    // tech: fetch languages
+    // Fetch language breakdown
     try {
       const langs = await fetchJSON(`https://api.github.com/repos/${USER}/${p.repo}/languages`);
       const keys = Object.keys(langs);
       if (keys.length) {
         const tech = card.querySelector("[data-tech]");
-        tech.innerHTML = keys.slice(0, 6).map(k => `<span>${k}</span>`).join("");
-        p._tech = keys;
+        if (tech) {
+          tech.innerHTML = keys.slice(0, 6).map(k => `<span>${k}</span>`).join("");
+          p._tech = keys;
+        }
       }
-    } catch {}
+    } catch {
+      // Fallback already shown — silent
+    }
   } catch {
-    // silent — fallback already shown
+    // Rate-limited or network error — fallback already shown
   }
 }
 
-PROJECTS.forEach(hydrateRepo);
+// Stagger hydration calls to reduce GitHub API rate-limit pressure
+PROJECTS.forEach((p, i) => {
+  setTimeout(() => hydrateRepo(p), i * 300);
+});
 
 // ===== Profile stats =====
 (async () => {
   try {
     const u = await fetchJSON(`https://api.github.com/users/${USER}`);
-    document.getElementById("stat-repos").textContent = u.public_repos ?? "—";
-    document.getElementById("stat-followers").textContent = u.followers ?? "—";
-    document.getElementById("stat-bio").textContent =
+    const repoEl = document.getElementById("stat-repos");
+    const followEl = document.getElementById("stat-followers");
+    const bioEl = document.getElementById("stat-bio");
+    if (repoEl) repoEl.textContent = u.public_repos ?? "—";
+    if (followEl) followEl.textContent = u.followers ?? "—";
+    if (bioEl) bioEl.textContent =
       u.bio || "Systems-focused developer & cybersecurity engineer. Building experimental software, secure communications, and advanced digital infrastructure.";
   } catch {
-    document.getElementById("stat-bio").textContent =
+    const bioEl = document.getElementById("stat-bio");
+    if (bioEl) bioEl.textContent =
       "Systems-focused developer & cybersecurity engineer. Building experimental software, secure communications, and advanced digital infrastructure.";
   }
 })();
 
 // ===== Modal =====
-const modal = document.getElementById("modal");
-const modalBody = document.getElementById("modal-body");
+const modal      = document.getElementById("modal");
+const modalBody  = document.getElementById("modal-body");
 const modalTitle = document.getElementById("modal-title");
 const modalEyebrow = document.getElementById("modal-eyebrow");
-const modalIcon = document.getElementById("modal-icon");
-const modalGh = document.getElementById("modal-gh");
-const modalMeta = document.getElementById("modal-meta");
+const modalIcon  = document.getElementById("modal-icon");
+const modalGh    = document.getElementById("modal-gh");
+const modalDownload = document.getElementById("modal-download");
+const modalMeta  = document.getElementById("modal-meta");
+
+// Active fetch abort controller — prevents race conditions when user
+// opens a card while another card's README is still loading.
+let _activeReadmeController = null;
 
 function closeModal() {
   modal.classList.remove("open");
   modal.setAttribute("aria-hidden", "true");
-  document.body.style.overflow = "";
+  document.body.classList.remove("modal-open");
+  // Cancel any in-flight README fetch
+  if (_activeReadmeController) {
+    _activeReadmeController.abort();
+    _activeReadmeController = null;
+  }
 }
+
 modal.querySelectorAll("[data-close]").forEach(el => el.addEventListener("click", closeModal));
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
+// Close on backdrop click (touch-friendly — check exact target)
+modal.addEventListener("click", (e) => {
+  if (e.target === modal) closeModal();
+});
+
 async function openModal(p) {
+  // Abort any previous in-flight fetch first
+  if (_activeReadmeController) {
+    _activeReadmeController.abort();
+    _activeReadmeController = null;
+  }
+
   modal.classList.add("open");
   modal.setAttribute("aria-hidden", "false");
-  document.body.style.overflow = "hidden";
+  document.body.classList.add("modal-open");
 
-  modalTitle.textContent = p.name;
-  modalEyebrow.textContent = p.badge.text;
-  modalIcon.innerHTML = iconHTML(p);
-  modalGh.href = `https://github.com/${USER}/${p.repo}`;
+  if (modalTitle)   modalTitle.textContent   = p.name;
+  if (modalEyebrow) modalEyebrow.textContent = p.badge.text;
+  if (modalIcon)    modalIcon.innerHTML      = iconHTML(p);
+  if (modalGh)      modalGh.href             = `https://github.com/${USER}/${p.repo}`;
+  if (modalDownload) {
+    if (p.download) {
+      modalDownload.href = p.download.url;
+      modalDownload.textContent = p.download.label;
+      modalDownload.hidden = false;
+    } else {
+      modalDownload.hidden = true;
+    }
+  }
 
   // meta
   const tech = p._tech || p.fallbackTech;
-  modalMeta.innerHTML = tech.slice(0, 8).map(t => `<span class="badge">${t}</span>`).join("");
+  if (modalMeta) modalMeta.innerHTML = tech.slice(0, 8).map(t => `<span class="badge">${t}</span>`).join("");
 
-  modalBody.innerHTML = `<div class="loader"><span></span><span></span><span></span></div>`;
+  if (modalBody) modalBody.innerHTML = `<div class="loader"><span></span><span></span><span></span></div>`;
+
+  // Create abort controller for this fetch
+  _activeReadmeController = new AbortController();
+  const { signal } = _activeReadmeController;
 
   try {
     const r = await fetch(`https://api.github.com/repos/${USER}/${p.repo}/readme`, {
-      headers: { Accept: "application/vnd.github.v3.raw" }
+      headers: { Accept: "application/vnd.github.v3.raw" },
+      signal
     });
-    if (!r.ok) throw new Error(r.status);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const md = await r.text();
+    // Guard: signal could have been aborted while awaiting
+    if (signal.aborted) return;
     renderMarkdown(md, p);
-  } catch {
+  } catch (err) {
+    // Ignore AbortError — user navigated away intentionally
+    if (err.name === "AbortError") return;
     renderFallback(p);
+  } finally {
+    // Clear controller only if it's still this request's controller
+    if (_activeReadmeController && _activeReadmeController.signal === signal) {
+      _activeReadmeController = null;
+    }
   }
 }
 
 function renderMarkdown(md, p) {
-  // rewrite relative image paths to GitHub raw
+  if (!markedAvailable()) {
+    renderFallback(p);
+    return;
+  }
+  // Rewrite relative image paths to GitHub raw
   const base = `https://raw.githubusercontent.com/${USER}/${p.repo}/HEAD/`;
   const html = window.marked.parse(md, { breaks: true, gfm: true });
   const fixed = html
     .replace(/(<img[^>]+src=")(?!https?:|data:)([^"]+)/gi, (_, a, src) => a + base + src.replace(/^\.?\//, ""));
-  modalBody.innerHTML = fixed;
-  // open external links in new tab
-  modalBody.querySelectorAll("a").forEach(a => {
-    a.target = "_blank"; a.rel = "noopener";
-  });
+  if (modalBody) {
+    modalBody.innerHTML = fixed;
+    // Open all links in new tab
+    modalBody.querySelectorAll("a").forEach(a => {
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+    });
+  }
 }
 
 function renderFallback(p) {
   const tech = (p._tech || p.fallbackTech).map(t => `<li>${t}</li>`).join("");
-  modalBody.innerHTML = `
+  if (modalBody) modalBody.innerHTML = `
     <h1>${p.name}</h1>
     <p>${p.summary}</p>
     <h2>Overview</h2>
-    <p>This project is part of an ongoing exploration into ${p.tier === "hero" ? "advanced data orchestration" : p.tier === "mid" ? "secure systems infrastructure" : "low-level terminal tooling"}. Documentation is being prepared.</p>
+    <p>This project is part of an ongoing exploration into ${
+      p.tier === "hero"  ? "advanced data orchestration" :
+      p.tier === "mid"   ? "secure systems infrastructure" :
+                           "low-level terminal tooling"
+    }. Documentation is being prepared.</p>
     <h2>Tech Stack</h2>
     <ul>${tech}</ul>
     <h2>Status</h2>
     <blockquote>${p.badge.text}</blockquote>
-    <p>Visit the <a href="https://github.com/${USER}/${p.repo}" target="_blank" rel="noopener">GitHub repository</a> for source and updates.</p>
+    <p>Visit the <a href="https://github.com/${USER}/${p.repo}" target="_blank" rel="noopener noreferrer">GitHub repository</a> for source and updates.</p>
   `;
 }
 
