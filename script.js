@@ -13,7 +13,7 @@ const PROJECTS = [
     summary: "Desinged to use external WiFi Adapter in Android Devices and its safe and no-root and no developer mode required.",
     fallbackTech: ["Systems", "Networking"],
     icon: { type: "img", src: "assets/etherware.svg" },
-    download: { label: "Download EtherWare 2.0", url: "https://www.linkedin.com/in/ad1xmohd/" }
+    download: { label: "Download EtherWare 2.0", url: "https://github.com/ad1xmohd/EtherWare/releases/download/EtherWare/EtherWare.v2.apk" }
   },
   {
     repo: "XcelSync",
