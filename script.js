@@ -9,7 +9,7 @@ const PROJECTS = [
     repo: "EtherWare",
     name: "EtherWare",
     tier: "mid",
-    badge: { text: "Early access on EtherWare", cls: "dev" },
+    badge: { text: "Early access", cls: "dev" },
     summary: "Desinged to use external WiFi Adapter in Android Devices and its safe and no-root and no developer mode required.",
     fallbackTech: ["Systems", "Networking"],
     icon: { type: "img", src: "assets/etherware.svg" },
